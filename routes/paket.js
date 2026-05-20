@@ -1,33 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
-
-// Helper to safe parse JSON fields
-function safeParseJSON(value, defaultValue = []) {
-  if (!value) return defaultValue;
-  try {
-    return typeof value === 'string' ? JSON.parse(value) : value;
-  } catch (e) {
-    return defaultValue;
-  }
-}
-
-// Helper to format a single package row to match PHP output format
-function formatPaket(row) {
-  return {
-    ...row,
-    id: parseInt(row.id),
-    rating: parseInt(row.rating),
-    highlight: !!row.highlight,
-    fasilitas: safeParseJSON(row.fasilitas, []),
-    itinerary: safeParseJSON(row.itinerary, []),
-    includes: safeParseJSON(row.includes, []),
-    excludes: safeParseJSON(row.excludes, [])
-  };
-}
+const supabase = require('../supabase');
 
 // ----------------------------------------
-// GET - Ambil data paket (Semua atau Tunggal via ?id=X atau /:id)
+// GET - Ambil data paket (Semua atau Tunggal via ?id=X)
 // ----------------------------------------
 router.get('/', async (req, res) => {
   try {
@@ -40,19 +16,29 @@ router.get('/', async (req, res) => {
         return res.status(400).json({ success: false, message: 'ID tidak valid' });
       }
 
-      const [rows] = await db.query('SELECT * FROM paket_travel WHERE id = ?', [paketId]);
-      
-      if (rows.length === 0) {
+      const { data, error } = await supabase
+        .from('paket_travel')
+        .select('*')
+        .eq('id', paketId)
+        .maybeSingle();
+
+
+      console.log(data)
+      if (error) throw error;
+      if (!data) {
         return res.status(404).json({ success: false, message: 'Paket tidak ditemukan' });
       }
 
-      return res.json({ success: true, data: formatPaket(rows[0]) });
+      return res.json({ success: true, data });
     } else {
       // Ambil semua paket
-      const [rows] = await db.query('SELECT * FROM paket_travel ORDER BY id ASC');
-      const formattedRows = rows.map(row => formatPaket(row));
-      
-      return res.json({ success: true, data: formattedRows });
+      const { data, error } = await supabase
+        .from('paket_travel')
+        .select('*')
+        .order('id', { ascending: true });
+
+      if (error) throw error;
+      return res.json({ success: true, data: data || [] });
     }
   } catch (error) {
     console.error('Error GET /paket:', error);
@@ -68,13 +54,18 @@ router.get('/:id', async (req, res) => {
       return res.status(400).json({ success: false, message: 'ID tidak valid' });
     }
 
-    const [rows] = await db.query('SELECT * FROM paket_travel WHERE id = ?', [paketId]);
-    
-    if (rows.length === 0) {
+    const { data, error } = await supabase
+      .from('paket_travel')
+      .select('*')
+      .eq('id', paketId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
       return res.status(404).json({ success: false, message: 'Paket tidak ditemukan' });
     }
 
-    return res.json({ success: true, data: formatPaket(rows[0]) });
+    return res.json({ success: true, data });
   } catch (error) {
     console.error('Error GET /paket/:id:', error);
     return res.status(500).json({ success: false, message: 'Gagal mengambil data paket: ' + error.message });
@@ -100,42 +91,38 @@ router.post('/', async (req, res) => {
       }
     }
 
-    const nama = input.nama;
-    const image = input.image || '/images/default.jpg';
-    const harga = input.harga;
-    const durasi = input.durasi;
-    const kapasitas = input.kapasitas;
-    const rating = parseInt(input.rating !== undefined ? input.rating : 5);
-    const badge = input.badge || null;
-    const badgeColor = input.badgeColor || null;
-    const fasilitas = JSON.stringify(input.fasilitas || []);
-    const highlight = parseInt(input.highlight !== undefined ? input.highlight : 0);
-    const deskripsi = input.deskripsi;
-    const itinerary = JSON.stringify(input.itinerary || []);
-    const includes = JSON.stringify(input.includes || []);
-    const excludes = JSON.stringify(input.excludes || []);
-    const keberangkatan = input.keberangkatan;
-    const maskapai = input.maskapai;
-    const hotel = input.hotel;
-    const wa = input.wa;
+    const payload = {
+      nama: input.nama,
+      image: input.image || '/images/default.jpg',
+      harga: input.harga,
+      durasi: input.durasi,
+      kapasitas: input.kapasitas,
+      rating: parseInt(input.rating !== undefined ? input.rating : 5),
+      badge: input.badge || null,
+      badgeColor: input.badgeColor || null,
+      fasilitas: input.fasilitas || [], // Langsung array, Supabase & Postgres JSONB menanganinya secara native
+      highlight: !!input.highlight, // Boolean native
+      deskripsi: input.deskripsi,
+      itinerary: input.itinerary || [],
+      includes: input.includes || [],
+      excludes: input.excludes || [],
+      keberangkatan: input.keberangkatan,
+      maskapai: input.maskapai,
+      hotel: input.hotel,
+      wa: input.wa
+    };
 
-    const query = `
-      INSERT INTO paket_travel 
-      (nama, image, harga, durasi, kapasitas, rating, badge, badgeColor, fasilitas, highlight, deskripsi, itinerary, \`includes\`, excludes, keberangkatan, maskapai, hotel, wa) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
+    const { data, error } = await supabase
+      .from('paket_travel')
+      .insert([payload])
+      .select();
 
-    const [result] = await db.query(query, [
-      nama, image, harga, durasi, kapasitas,
-      rating, badge, badgeColor, fasilitas,
-      highlight, deskripsi, itinerary, includes,
-      excludes, keberangkatan, maskapai, hotel, wa
-    ]);
+    if (error) throw error;
 
     return res.status(201).json({
       success: true,
       message: 'Paket berhasil ditambahkan',
-      id: result.insertId
+      id: data[0].id
     });
   } catch (error) {
     console.error('Error POST /paket:', error);
@@ -159,13 +146,7 @@ router.put('/', async (req, res) => {
       return res.status(400).json({ success: false, message: 'ID tidak valid' });
     }
 
-    // Cek apakah paket ada
-    const [checkRows] = await db.query('SELECT id FROM paket_travel WHERE id = ?', [id]);
-    if (checkRows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Paket tidak ditemukan' });
-    }
-
-    // Validasi field wajib untuk update (opsional, tapi disamakan seperti PHP)
+    // Validasi field wajib
     const required = ['nama', 'harga', 'durasi', 'kapasitas', 'deskripsi', 'keberangkatan', 'maskapai', 'hotel', 'wa'];
     for (const field of required) {
       if (input[field] === undefined || input[field] === null || input[field] === '') {
@@ -173,38 +154,37 @@ router.put('/', async (req, res) => {
       }
     }
 
-    const nama = input.nama;
-    const image = input.image || '/images/default.jpg';
-    const harga = input.harga;
-    const durasi = input.durasi;
-    const kapasitas = input.kapasitas;
-    const rating = parseInt(input.rating !== undefined ? input.rating : 5);
-    const badge = input.badge || null;
-    const badgeColor = input.badgeColor || null;
-    const fasilitas = JSON.stringify(input.fasilitas || []);
-    const highlight = parseInt(input.highlight !== undefined ? input.highlight : 0);
-    const deskripsi = input.deskripsi;
-    const itinerary = JSON.stringify(input.itinerary || []);
-    const includes = JSON.stringify(input.includes || []);
-    const excludes = JSON.stringify(input.excludes || []);
-    const keberangkatan = input.keberangkatan;
-    const maskapai = input.maskapai;
-    const hotel = input.hotel;
-    const wa = input.wa;
+    const payload = {
+      nama: input.nama,
+      image: input.image || '/images/default.jpg',
+      harga: input.harga,
+      durasi: input.durasi,
+      kapasitas: input.kapasitas,
+      rating: parseInt(input.rating !== undefined ? input.rating : 5),
+      badge: input.badge || null,
+      badgeColor: input.badgeColor || null,
+      fasilitas: input.fasilitas || [],
+      highlight: !!input.highlight,
+      deskripsi: input.deskripsi,
+      itinerary: input.itinerary || [],
+      includes: input.includes || [],
+      excludes: input.excludes || [],
+      keberangkatan: input.keberangkatan,
+      maskapai: input.maskapai,
+      hotel: input.hotel,
+      wa: input.wa
+    };
 
-    const query = `
-      UPDATE paket_travel SET 
-        nama=?, image=?, harga=?, durasi=?, kapasitas=?, rating=?, badge=?, badgeColor=?, 
-        fasilitas=?, highlight=?, deskripsi=?, itinerary=?, \`includes\`=?, excludes=?, 
-        keberangkatan=?, maskapai=?, hotel=?, wa=? 
-      WHERE id=?
-    `;
+    const { data, error } = await supabase
+      .from('paket_travel')
+      .update(payload)
+      .eq('id', id)
+      .select();
 
-    await db.query(query, [
-      nama, image, harga, durasi, kapasitas, rating, badge, badgeColor,
-      fasilitas, highlight, deskripsi, itinerary, includes, excludes,
-      keberangkatan, maskapai, hotel, wa, id
-    ]);
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      return res.status(404).json({ success: false, message: 'Paket tidak ditemukan' });
+    }
 
     return res.json({ success: true, message: 'Paket berhasil diperbarui' });
   } catch (error) {
@@ -214,13 +194,12 @@ router.put('/', async (req, res) => {
 });
 
 // ----------------------------------------
-// DELETE - Hapus paket (via ?id=X atau body)
+// DELETE - Hapus paket
 // ----------------------------------------
 router.delete('/', async (req, res) => {
   try {
     let id = req.query.id ? parseInt(req.query.id) : 0;
 
-    // Jika tidak ada di query, coba ambil dari body
     if (!id && req.body && req.body.id) {
       id = parseInt(req.body.id);
     }
@@ -229,13 +208,18 @@ router.delete('/', async (req, res) => {
       return res.status(400).json({ success: false, message: 'ID paket tidak valid' });
     }
 
-    const [result] = await db.query('DELETE FROM paket_travel WHERE id = ?', [id]);
+    const { data, error } = await supabase
+      .from('paket_travel')
+      .delete()
+      .eq('id', id)
+      .select();
 
-    if (result.affectedRows > 0) {
-      return res.json({ success: true, message: 'Paket berhasil dihapus' });
-    } else {
+    if (error) throw error;
+    if (!data || data.length === 0) {
       return res.status(404).json({ success: false, message: 'Paket tidak ditemukan' });
     }
+
+    return res.json({ success: true, message: 'Paket berhasil dihapus' });
   } catch (error) {
     console.error('Error DELETE /paket:', error);
     return res.status(500).json({ success: false, message: 'Gagal menghapus paket: ' + error.message });
