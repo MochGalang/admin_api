@@ -1,10 +1,3 @@
--- ============================================
--- Database: db_travel
--- Marco Travel - Admin Panel
--- ============================================
-
-CREATE DATABASE IF NOT EXISTS `db_travel` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `db_travel`;
 
 -- ============================================
 -- Tabel: paket_travel
