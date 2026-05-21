@@ -9,7 +9,6 @@ const PORT = process.env.PORT || 8000;
 app.use(cors({
   origin: '*', // Allow all origins for compatibility (can be restricted in production)
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // Body Parsers
@@ -24,7 +23,12 @@ app.use((req, res, next) => {
 
 // Import and register routes
 const paketRouter = require('./routes/paket');
+const galeriRouter = require('./routes/galeri');
+const pengaturanRouter = require('./routes/pengaturan');
+
 app.use('/api/paket', paketRouter);
+app.use('/api/galeri', galeriRouter);
+app.use('/api/pengaturan', pengaturanRouter);
 
 // Base route for API health check
 app.get('/api', (req, res) => {
